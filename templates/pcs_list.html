@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}PCS Management - KBM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0" style="color: #1a237e;">
+        <i class="bi bi-folder2-open me-2"></i>Project Costing System (PCS)
+    </h2>
+    <a href="{{ url_for('pcs_new') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg me-1"></i>New PCS
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="form-label mb-0 fw-bold small">LOB:</label>
+            </div>
+            <div class="col-auto">
+                <select name="lob" class="form-select form-select-sm">
+                    <option value="All" {{ 'selected' if lob_filter == 'All' }}>All</option>
+                    {% for lob in lobs %}
+                    <option value="{{ lob }}" {{ 'selected' if lob_filter == lob }}>{{ lob }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="form-label mb-0 fw-bold small">Status:</label>
+            </div>
+            <div class="col-auto">
+                <select name="status" class="form-select form-select-sm">
+                    {% for s in ['All', 'Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Interfaced'] %}
+                    <option value="{{ s }}" {{ 'selected' if status_filter == s }}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-funnel me-1"></i>Filter
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- PCS Table -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Project #</th><th>Customer</th><th>LOB</th>
+                        <th>Type</th><th class="text-end">Bid Size</th>
+                        <th class="text-end">Margin</th><th>Status</th><th>Level</th>
+                        <th>Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in records %}
+                    <tr onclick="window.location='/pcs/{{ r.id }}'" style="cursor:pointer">
+                        <td>{{ r.id }}</td>
+                        <td><strong>{{ r.project_number }}</strong></td>
+                        <td>{{ r.customer_name }}</td>
+                        <td><span class="badge bg-secondary">{{ r.lob }}</span></td>
+                        <td>{{ r.pcs_type }}</td>
+                        <td class="text-end">${{ "{:,.0f}".format(r.bid_size) }}</td>
+                        <td class="text-end {{ 'text-success' if r.profit_margin >= 10 else 'text-danger' }}">
+                            {{ "%.1f"|format(r.profit_margin) }}%
+                        </td>
+                        <td>
+                            <span class="badge badge-status"
+                                  style="background: {{ status_colors.get(r.status, '#6c757d') }}; color: white;">
+                                {{ r.status }}
+                            </span>
+                        </td>
+                        <td>L{{ r.required_approval_level }}</td>
+                        <td class="text-muted small">{{ r.updated_at[:16] if r.updated_at else '' }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not records %}
+                    <tr><td colspan="10" class="text-center text-muted py-4">No PCS records found</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

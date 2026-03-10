@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Approval Matrix - KBM{% endblock %}
+{% block content %}
+<h2 class="fw-bold mb-4" style="color: #1a237e;">
+    <i class="bi bi-diagram-3 me-2"></i>Approval Matrix Reference
+</h2>
+
+<div class="row g-4">
+    <!-- PCS Approval Levels by LOB -->
+    {% for title, levels in [
+        ('DIS (Digital Infrastructure Solutions)', dis_levels),
+        ('Digital Solution', ds_levels),
+        ('Managed Services', ms_levels),
+        ('Enterprise Systems', es_levels),
+    ] %}
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white"><h5 class="mb-0">{{ title }}</h5></div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr><th>Level</th><th>Role</th><th class="text-end">Min Bid Size</th></tr></thead>
+                    <tbody>
+                        {% for lvl in levels %}
+                        <tr>
+                            <td><span class="badge bg-primary">L{{ lvl.level }}</span></td>
+                            <td>{{ lvl.role }}</td>
+                            <td class="text-end">${{ "{:,.0f}".format(lvl.min_bid) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- PCM Delegation Matrix -->
+<h3 class="fw-bold mt-5 mb-3" style="color: #1a237e;">PCM Delegation (Discount Approval)</h3>
+<div class="row g-4">
+    {% for sub_lob, chain in pcm_delegation.items() %}
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-white"><h6 class="mb-0">{{ sub_lob }}</h6></div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Role</th><th class="text-end">Max Discount</th></tr></thead>
+                    <tbody>
+                        {% for entry in chain %}
+                        <tr><td>{{ entry.role }}</td><td class="text-end">{{ entry.max_discount }}%</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

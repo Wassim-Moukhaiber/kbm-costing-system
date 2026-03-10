@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - KBM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-0" style="color: #1a237e;">Dashboard</h2>
+        <p class="text-muted mb-0">KBM Pricing Delegation & Approval Matrix</p>
+    </div>
+    <div>
+        <a href="{{ url_for('pcs_new') }}" class="btn btn-primary me-2">
+            <i class="bi bi-plus-lg me-1"></i>New PCS
+        </a>
+        <a href="{{ url_for('pcm_new') }}" class="btn btn-outline-primary">
+            <i class="bi bi-plus-lg me-1"></i>New PCM
+        </a>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-3 mb-4">
+    {% for key, label, icon, color in [
+        ('total_pcs', 'Total PCS', 'bi-folder2-open', '#1a237e'),
+        ('pcs_draft', 'Draft', 'bi-pencil', '#6c757d'),
+        ('pcs_review', 'Under Review', 'bi-hourglass-split', '#fd7e14'),
+        ('pcs_approved', 'Approved', 'bi-check-circle', '#28a745'),
+        ('pcs_rejected', 'Rejected', 'bi-x-circle', '#dc3545'),
+        ('total_pcm', 'Total PCM', 'bi-file-earmark-text', '#17a2b8'),
+        ('pcm_approved', 'PCM Approved', 'bi-check2-circle', '#28a745'),
+    ] %}
+    <div class="col-md col-sm-4">
+        <div class="card stat-card p-3">
+            <div class="d-flex align-items-center">
+                <div class="me-3">
+                    <i class="bi {{ icon }}" style="font-size: 1.8rem; color: {{ color }};"></i>
+                </div>
+                <div>
+                    <div class="stat-number">{{ stats[key] }}</div>
+                    <div class="text-muted small">{{ label }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Recent PCS Activity -->
+<div class="card">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent PCS Activity</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Project #</th><th>Customer</th><th>LOB</th>
+                        <th class="text-end">Bid Size</th><th class="text-end">Margin</th>
+                        <th>Status</th><th>Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pcs in recent_pcs %}
+                    <tr onclick="window.location='/pcs/{{ pcs.id }}'" style="cursor:pointer">
+                        <td>{{ pcs.id }}</td>
+                        <td><strong>{{ pcs.project_number }}</strong></td>
+                        <td>{{ pcs.customer_name }}</td>
+                        <td><span class="badge bg-secondary">{{ pcs.lob }}</span></td>
+                        <td class="text-end">${{ "{:,.0f}".format(pcs.bid_size) }}</td>
+                        <td class="text-end">
+                            <span class="{{ 'text-success' if pcs.profit_margin >= 10 else 'text-danger' }}">
+                                {{ "%.1f"|format(pcs.profit_margin) }}%
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge badge-status"
+                                  style="background: {{ status_colors.get(pcs.status, '#6c757d') }}; color: white;">
+                                {{ pcs.status }}
+                            </span>
+                        </td>
+                        <td class="text-muted small">{{ pcs.updated_at[:16] if pcs.updated_at else '' }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not recent_pcs %}
+                    <tr><td colspan="8" class="text-center text-muted py-4">No PCS records yet</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

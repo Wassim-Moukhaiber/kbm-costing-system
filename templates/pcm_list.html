@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}PCM Management - KBM{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0" style="color: #1a237e;">
+        <i class="bi bi-file-earmark-text me-2"></i>Proposal & Contract Management (PCM)
+    </h2>
+    <a href="{{ url_for('pcm_new') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg me-1"></i>New PCM
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Contract #</th><th>Customer</th><th>Category</th>
+                        <th>Sub-LOB</th><th>Type</th><th class="text-end">List Price</th>
+                        <th class="text-end">Sell Price</th><th class="text-end">Discount</th>
+                        <th>Status</th><th>Approver</th><th>Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in records %}
+                    <tr onclick="window.location='/pcm/{{ r.id }}'" style="cursor:pointer">
+                        <td>{{ r.id }}</td>
+                        <td><strong>{{ r.contract_number }}</strong></td>
+                        <td>{{ r.customer_name }}</td>
+                        <td><span class="badge bg-secondary">{{ r.pcm_category }}</span></td>
+                        <td>{{ r.sub_lob }}</td>
+                        <td>{{ r.contract_type }}</td>
+                        <td class="text-end">${{ "{:,.0f}".format(r.list_price) }}</td>
+                        <td class="text-end">${{ "{:,.0f}".format(r.selling_price) }}</td>
+                        <td class="text-end">{{ "%.1f"|format(r.discount_pct) }}%</td>
+                        <td>
+                            <span class="badge badge-status"
+                                  style="background: {{ status_colors.get(r.status, '#6c757d') }}; color: white;">
+                                {{ r.status }}
+                            </span>
+                        </td>
+                        <td class="small">{{ r.required_approver }}</td>
+                        <td class="text-muted small">{{ r.updated_at[:16] if r.updated_at else '' }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not records %}
+                    <tr><td colspan="12" class="text-center text-muted py-4">No PCM records found</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}New PCM - KBM{% endblock %}
+{% block content %}
+<a href="{{ url_for('pcm_list') }}" class="text-decoration-none text-muted small">
+    <i class="bi bi-arrow-left me-1"></i>Back to PCM List
+</a>
+<h2 class="fw-bold mb-4" style="color: #1a237e;">
+    <i class="bi bi-plus-circle me-2"></i>Create New PCM
+</h2>
+
+<form method="POST">
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header bg-white"><h5 class="mb-0">Contract Details</h5></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Contract Number <span class="text-danger">*</span></label>
+                            <input type="text" name="contract_number" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Customer Name <span class="text-danger">*</span></label>
+                            <input type="text" name="customer_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Category</label>
+                            <select name="pcm_category" id="catSelect" class="form-select" onchange="updateSubLobs()">
+                                {% for cat in pcm_categories %}<option>{{ cat }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Sub-LOB</label>
+                            <select name="sub_lob" id="subLobSelect" class="form-select"></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Contract Type</label>
+                            <select name="contract_type" class="form-select">
+                                <option>Renewal</option><option>New</option><option>Amendment</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">List Price ($)</label>
+                            <input type="number" name="list_price" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Selling Price ($)</label>
+                            <input type="number" name="selling_price" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold">Comments</label>
+                            <textarea name="comments" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">
+                        <i class="bi bi-check-lg me-2"></i>Create PCM
+                    </button>
+                    <a href="{{ url_for('pcm_list') }}" class="btn btn-outline-secondary w-100">Cancel</a>
+                    <hr>
+                    <p class="text-muted small">Discount % is auto-calculated from list & selling prices.
+                    Required approver is determined by the PCM delegation matrix.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const catData = {{ pcm_categories|tojson }};
+function updateSubLobs() {
+    const cat = document.getElementById('catSelect').value;
+    const sel = document.getElementById('subLobSelect');
+    sel.innerHTML = '';
+    if (catData[cat]) {
+        catData[cat].forEach(s => { sel.innerHTML += `<option>${s}</option>`; });
+    }
+}
+updateSubLobs();
+</script>
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}PCM #{{ pcm.id }} - {{ pcm.contract_number }}{% endblock %}
+{% block content %}
+<a href="{{ url_for('pcm_list') }}" class="text-decoration-none text-muted small">
+    <i class="bi bi-arrow-left me-1"></i>Back to PCM List
+</a>
+<h2 class="fw-bold mb-3" style="color: #1a237e;">PCM #{{ pcm.id }} — {{ pcm.contract_number }}</h2>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card mb-3">
+            <div class="card-header bg-white"><h5 class="mb-0">Contract Details</h5></div>
+            <div class="card-body">
+                <div class="row g-2">
+                    {% for label, val in [
+                        ('Contract #', pcm.contract_number), ('Customer', pcm.customer_name),
+                        ('Category', pcm.pcm_category), ('Sub-LOB', pcm.sub_lob),
+                        ('Contract Type', pcm.contract_type),
+                        ('List Price', '${:,.2f}'.format(pcm.list_price)),
+                        ('Selling Price', '${:,.2f}'.format(pcm.selling_price)),
+                        ('Discount', '{:.2f}%'.format(pcm.discount_pct)),
+                        ('Required Approver', pcm.required_approver),
+                    ] %}
+                    <div class="col-md-6"><small class="text-muted">{{ label }}</small><div class="fw-bold">{{ val or '—' }}</div></div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header bg-white"><h5 class="mb-0">History</h5></div>
+            <div class="card-body">
+                {% for h in history %}
+                <div class="d-flex mb-2 pb-2 border-bottom">
+                    <div class="me-3">
+                        {% if 'Approved' in h.action %}<i class="bi bi-check-circle-fill text-success"></i>
+                        {% elif 'Rejected' in h.action %}<i class="bi bi-x-circle-fill text-danger"></i>
+                        {% else %}<i class="bi bi-circle-fill text-muted"></i>{% endif %}
+                    </div>
+                    <div>
+                        <div class="fw-bold">{{ h.action }}</div>
+                        <small class="text-muted">{{ h.action_by }} | {{ h.timestamp }}{% if h.comment %} | {{ h.comment }}{% endif %}</small>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-body text-center">
+                <span class="badge badge-status fs-5 px-4 py-2"
+                      style="background: {{ status_colors.get(pcm.status, '#6c757d') }}; color: white;">
+                    {{ pcm.status }}
+                </span>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header bg-white"><h5 class="mb-0">Actions</h5></div>
+            <div class="card-body">
+                <textarea id="comment" class="form-control mb-3" rows="2" placeholder="Comment..."></textarea>
+                <div class="d-flex flex-wrap gap-2">
+                    {% if pcm.status == 'Draft' %}
+                    <form method="POST" action="{{ url_for('pcm_submit', pcm_id=pcm.id) }}">
+                        <button class="btn btn-primary"><i class="bi bi-send me-1"></i>Submit</button>
+                    </form>
+                    {% endif %}
+                    {% if pcm.status == 'Submitted' %}
+                    <form method="POST" action="{{ url_for('pcm_approve', pcm_id=pcm.id) }}"
+                          onsubmit="this.querySelector('[name=comment]').value=document.getElementById('comment').value">
+                        <input type="hidden" name="comment"><button class="btn btn-success"><i class="bi bi-check-lg me-1"></i>Approve</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('pcm_reject', pcm_id=pcm.id) }}"
+                          onsubmit="this.querySelector('[name=comment]').value=document.getElementById('comment').value">
+                        <input type="hidden" name="comment"><button class="btn btn-danger"><i class="bi bi-x-lg me-1"></i>Reject</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

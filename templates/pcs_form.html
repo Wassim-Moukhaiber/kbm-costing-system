@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}New PCS - KBM{% endblock %}
+{% block content %}
+<a href="{{ url_for('pcs_list') }}" class="text-decoration-none text-muted small">
+    <i class="bi bi-arrow-left me-1"></i>Back to PCS List
+</a>
+<h2 class="fw-bold mb-4" style="color: #1a237e;">
+    <i class="bi bi-plus-circle me-2"></i>Create New PCS
+</h2>
+
+<form method="POST">
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-header bg-white"><h5 class="mb-0">Project Details</h5></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Project Number <span class="text-danger">*</span></label>
+                            <input type="text" name="project_number" class="form-control" required placeholder="e.g. C5K401">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Salesforce #</label>
+                            <input type="text" name="salesforce_number" class="form-control" placeholder="e.g. KWT-202510-98234">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Customer Name <span class="text-danger">*</span></label>
+                            <input type="text" name="customer_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">PCS Type</label>
+                            <select name="pcs_type" class="form-select">
+                                {% for t in pcs_types %}<option>{{ t }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">LOB <span class="text-danger">*</span></label>
+                            <select name="lob" id="lobSelect" class="form-select" required onchange="updateSections()">
+                                <option value="">Select LOB...</option>
+                                {% for lob in lob_options %}<option>{{ lob }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Section</label>
+                            <select name="section" id="sectionSelect" class="form-select" onchange="updateSubSections()">
+                                <option value="">Select section...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Sub-Section</label>
+                            <select name="sub_section" id="subSectionSelect" class="form-select">
+                                <option value="">Select sub-section...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Opportunity Status</label>
+                            <select name="opportunity_status" class="form-select">
+                                {% for s in opp_statuses %}<option>{{ s }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Reference PCS</label>
+                            <input type="text" name="reference_pcs" class="form-control" placeholder="For Change/Correction">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header bg-white"><h5 class="mb-0">Financial Details</h5></div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Bid Size ($)</label>
+                            <input type="number" name="bid_size" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Total Cost ($)</label>
+                            <input type="number" name="total_cost" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Selling Price ($)</label>
+                            <input type="number" name="selling_price" class="form-control" step="0.01" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Profit Margin (%)</label>
+                            <input type="number" name="profit_margin" class="form-control" step="0.01" value="0">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-white"><h5 class="mb-0">Comments</h5></div>
+                <div class="card-body">
+                    <textarea name="comments" class="form-control" rows="3" placeholder="Project description, notes..."></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">
+                        <i class="bi bi-check-lg me-2"></i>Create PCS (Draft)
+                    </button>
+                    <a href="{{ url_for('pcs_list') }}" class="btn btn-outline-secondary w-100">Cancel</a>
+                    <hr>
+                    <p class="text-muted small mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        The PCS will be created in Draft status. You can add cost sheet
+                        line items and submit for approval later.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const lobData = {{ lob_options|tojson }};
+function updateSections() {
+    const lob = document.getElementById('lobSelect').value;
+    const secSel = document.getElementById('sectionSelect');
+    const subSel = document.getElementById('subSectionSelect');
+    secSel.innerHTML = '<option value="">Select section...</option>';
+    subSel.innerHTML = '<option value="">Select sub-section...</option>';
+    if (lob && lobData[lob]) {
+        Object.keys(lobData[lob]).forEach(sec => {
+            secSel.innerHTML += `<option>${sec}</option>`;
+        });
+    }
+}
+function updateSubSections() {
+    const lob = document.getElementById('lobSelect').value;
+    const sec = document.getElementById('sectionSelect').value;
+    const subSel = document.getElementById('subSectionSelect');
+    subSel.innerHTML = '<option value="">Select sub-section...</option>';
+    if (lob && sec && lobData[lob] && lobData[lob][sec]) {
+        lobData[lob][sec].forEach(sub => {
+            subSel.innerHTML += `<option>${sub}</option>`;
+        });
+    }
+}
+</script>
+{% endblock %}
