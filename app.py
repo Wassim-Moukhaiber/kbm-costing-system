@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
-                   flash, session, jsonify, g)
+                   flash, session, jsonify, g, send_from_directory)
 
 from config import (
     PCS_LOB_OPTIONS, PCS_TYPES, OPPORTUNITY_STATUSES, DOC_TYPES,
@@ -20,11 +20,17 @@ from config import (
     DS_BID_SIZE_LEVELS, DS_SERVICES_BID_SIZE_LEVELS, DS_MARGIN_MATRIX,
     MS_BID_SIZE_LEVELS, MS_MARGIN_LEVELS,
     ES_BID_SIZE_LEVELS, ES_MARGIN_MATRIX,
-    PCM_DELEGATION,
+    PCM_DELEGATION, COST_SHEET_SECTIONS,
+    PCS_TECHNOLOGY_SELECTIONS, COUNTRY_DATA,
 )
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'kbm-secret-key-change-in-production')
+
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kbm_approval.db")
 
@@ -174,6 +180,17 @@ def init_db():
         total_sell_usd REAL DEFAULT 0,
         total_local_currency REAL DEFAULT 0,
         notes TEXT DEFAULT '',
+        FOREIGN KEY (pcs_id) REFERENCES pcs(id)
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS pcs_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pcs_id INTEGER NOT NULL,
+        doc_type TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        uploaded_by TEXT DEFAULT '',
+        uploaded_at TEXT,
         FOREIGN KEY (pcs_id) REFERENCES pcs(id)
     )""")
 
@@ -642,7 +659,7 @@ def pcs_new():
         db.commit()
 
         flash(f'PCS {project_number} created successfully!', 'success')
-        return redirect(url_for('pcs_detail', pcs_id=pcs_id))
+        return redirect(url_for('pcs_edit', pcs_id=pcs_id))
 
     return render_template('pcs_form.html', pcs_types=PCS_TYPES,
                          lob_options=PCS_LOB_OPTIONS,
@@ -783,6 +800,13 @@ def pcs_delete(pcs_id):
         flash('Only Draft or Rejected PCS can be deleted.', 'warning')
         return redirect(url_for('pcs_list'))
 
+    # Delete uploaded files
+    docs = db.execute("SELECT * FROM pcs_documents WHERE pcs_id = ?", (pcs_id,)).fetchall()
+    for doc in docs:
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], doc['file_path'])
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    db.execute("DELETE FROM pcs_documents WHERE pcs_id = ?", (pcs_id,))
     db.execute("DELETE FROM cost_sheet_lines WHERE pcs_id = ?", (pcs_id,))
     db.execute("DELETE FROM cost_sheet_config WHERE pcs_id = ?", (pcs_id,))
     db.execute("DELETE FROM pcs_history WHERE pcs_id = ?", (pcs_id,))
@@ -790,6 +814,274 @@ def pcs_delete(pcs_id):
     db.commit()
     flash(f'PCS {pcs["project_number"]} deleted.', 'info')
     return redirect(url_for('pcs_list'))
+
+
+# ─── PCS Editor Routes ────────────────────────────────────────────────────────
+
+@app.route('/pcs/<int:pcs_id>/edit')
+@login_required
+def pcs_edit(pcs_id):
+    """Full PCS editor with all 6 tabs."""
+    db = get_db()
+    pcs = db.execute("SELECT * FROM pcs WHERE id = ?", (pcs_id,)).fetchone()
+    if not pcs:
+        flash('PCS not found.', 'danger')
+        return redirect(url_for('pcs_list'))
+
+    config = db.execute("SELECT * FROM cost_sheet_config WHERE pcs_id = ?", (pcs_id,)).fetchone()
+    if not config:
+        db.execute("""INSERT INTO cost_sheet_config (pcs_id) VALUES (?)""", (pcs_id,))
+        db.commit()
+        config = db.execute("SELECT * FROM cost_sheet_config WHERE pcs_id = ?", (pcs_id,)).fetchone()
+
+    lines = db.execute("SELECT * FROM cost_sheet_lines WHERE pcs_id = ? ORDER BY line_number", (pcs_id,)).fetchall()
+    history = db.execute("SELECT * FROM pcs_history WHERE pcs_id = ? ORDER BY timestamp DESC", (pcs_id,)).fetchall()
+    docs = db.execute("SELECT * FROM pcs_documents WHERE pcs_id = ? ORDER BY uploaded_at", (pcs_id,)).fetchall()
+
+    # Compute totals
+    gt = {'total_list': 0, 'total_transfer': 0, 'total_cif': 0, 'gbm_cost': 0, 'total_sell_usd': 0, 'total_local_currency': 0}
+    for ln in lines:
+        for f in gt:
+            gt[f] += ln[f] if ln[f] else 0
+    gt['gross_profit'] = gt['total_sell_usd'] - gt['gbm_cost']
+    gt['gp_pct'] = ((gt['total_sell_usd'] - gt['gbm_cost']) / gt['total_sell_usd'] * 100 if gt['total_sell_usd'] else 0)
+
+    # Approval chain
+    levels = get_approval_levels(pcs['lob'])
+    req_level, _, detail = determine_pcs_approval(pcs['lob'], pcs['section'], pcs['sub_section'], gt['total_sell_usd'] or pcs['bid_size'], gt['gp_pct'] or pcs['profit_margin'])
+
+    return render_template('pcs_edit.html', pcs=pcs, config=config, lines=lines,
+                         history=history, docs=docs, gt=gt, levels=levels,
+                         req_level=req_level, detail=detail,
+                         pcs_types=PCS_TYPES, lob_options=PCS_LOB_OPTIONS,
+                         opp_statuses=OPPORTUNITY_STATUSES,
+                         cs_sections=COST_SHEET_SECTIONS,
+                         tech_selections=PCS_TECHNOLOGY_SELECTIONS,
+                         country_data=COUNTRY_DATA,
+                         doc_types=DOC_TYPES,
+                         status_colors=STATUS_COLORS)
+
+
+@app.route('/pcs/<int:pcs_id>/update', methods=['POST'])
+@login_required
+def pcs_update(pcs_id):
+    """Update PCS project info."""
+    db = get_db()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user = current_user()
+
+    db.execute("""UPDATE pcs SET project_number=?, salesforce_number=?, customer_name=?,
+        lob=?, sub_lob=?, section=?, sub_section=?, pcs_type=?, reference_pcs=?,
+        opportunity_status=?, comments=?, updated_at=? WHERE id=?""",
+        (request.form.get('project_number', ''),
+         request.form.get('salesforce_number', ''),
+         request.form.get('customer_name', ''),
+         request.form.get('lob', ''),
+         request.form.get('sub_lob', ''),
+         request.form.get('section', ''),
+         request.form.get('sub_section', ''),
+         request.form.get('pcs_type', 'New'),
+         request.form.get('reference_pcs', ''),
+         request.form.get('opportunity_status', 'Qualifying'),
+         request.form.get('comments', ''),
+         now, pcs_id))
+    db.commit()
+    flash('Project info updated.', 'success')
+    return redirect(url_for('pcs_edit', pcs_id=pcs_id))
+
+
+@app.route('/pcs/<int:pcs_id>/config', methods=['POST'])
+@login_required
+def pcs_config_update(pcs_id):
+    """Update cost sheet configuration."""
+    db = get_db()
+
+    db.execute("""UPDATE cost_sheet_config SET country=?, currency=?, exchange_rate=?,
+        local_charges_pct=?, customs_duty_pct=?, nl_consolidated_pct=?,
+        default_cisco_discount_pct=?, deal_id=? WHERE pcs_id=?""",
+        (request.form.get('country', 'Kuwait'),
+         request.form.get('currency', 'KWD'),
+         float(request.form.get('exchange_rate', 0.3125) or 0.3125),
+         float(request.form.get('local_charges_pct', 6.45) or 6.45),
+         float(request.form.get('customs_duty_pct', 5.0) or 5.0),
+         float(request.form.get('nl_consolidated_pct', 2.1) or 2.1),
+         float(request.form.get('default_cisco_discount_pct', 64.0) or 64.0),
+         request.form.get('deal_id', ''),
+         pcs_id))
+    db.commit()
+    flash('Cost sheet configuration saved.', 'success')
+    return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#config')
+
+
+@app.route('/pcs/<int:pcs_id>/line/add', methods=['POST'])
+@login_required
+def pcs_line_add(pcs_id):
+    """Add a new cost sheet line item."""
+    db = get_db()
+    config = db.execute("SELECT * FROM cost_sheet_config WHERE pcs_id = ?", (pcs_id,)).fetchone()
+    lcp = config['local_charges_pct'] if config else 6.45
+    exr = config['exchange_rate'] if config else 0.3125
+
+    max_ln = db.execute("SELECT MAX(line_number) FROM cost_sheet_lines WHERE pcs_id=?", (pcs_id,)).fetchone()[0]
+    line_num = (max_ln or 0) + 1
+
+    data = {
+        'qty': float(request.form.get('qty', 0) or 0),
+        'unit_list_price': float(request.form.get('unit_list_price', 0) or 0),
+        'discount_pct': float(request.form.get('discount_pct', 0) or 0),
+        'gbm_cost': float(request.form.get('gbm_cost', 0) or 0),
+        'gp_pct': float(request.form.get('gp_pct', 0) or 0),
+        'requested_sell': float(request.form.get('requested_sell', 0) or 0),
+    }
+    cs_recalc_line(data, lcp, exr)
+
+    db.execute("""INSERT INTO cost_sheet_lines
+        (pcs_id, line_number, section, subsection, subsection_code,
+         supplier, supplier_number, part_number, description,
+         uom, qty, unit_list_price, discount_pct,
+         total_list, total_transfer, total_cif, gbm_cost,
+         gp_pct, requested_sell, local_charges_loading,
+         total_sell_usd, total_local_currency, notes)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (pcs_id, line_num,
+         request.form.get('section', ''), request.form.get('subsection', ''),
+         request.form.get('subsection_code', ''),
+         request.form.get('supplier', ''), request.form.get('supplier_number', ''),
+         request.form.get('part_number', ''), request.form.get('description', ''),
+         request.form.get('uom', 'EA'), data['qty'],
+         data['unit_list_price'], data['discount_pct'],
+         data['total_list'], data['total_transfer'], data['total_cif'], data['gbm_cost'],
+         data['gp_pct'], data['requested_sell'],
+         data.get('local_charges_loading', 0),
+         data['total_sell_usd'], data['total_local_currency'],
+         request.form.get('notes', '')))
+    db.commit()
+    flash('Line item added.', 'success')
+    return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#lines')
+
+
+@app.route('/pcs/<int:pcs_id>/line/<int:line_id>/delete', methods=['POST'])
+@login_required
+def pcs_line_delete(pcs_id, line_id):
+    db = get_db()
+    db.execute("DELETE FROM cost_sheet_lines WHERE id = ? AND pcs_id = ?", (line_id, pcs_id))
+    db.commit()
+    flash('Line item deleted.', 'info')
+    return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#lines')
+
+
+@app.route('/pcs/<int:pcs_id>/sync-totals', methods=['POST'])
+@login_required
+def pcs_sync_totals(pcs_id):
+    """Recalculate and sync totals from cost sheet lines to PCS."""
+    db = get_db()
+    config = db.execute("SELECT * FROM cost_sheet_config WHERE pcs_id = ?", (pcs_id,)).fetchone()
+    lcp = config['local_charges_pct'] if config else 6.45
+    exr = config['exchange_rate'] if config else 0.3125
+
+    lines = db.execute("SELECT * FROM cost_sheet_lines WHERE pcs_id = ?", (pcs_id,)).fetchall()
+
+    # Recalc each line
+    for ln in lines:
+        data = dict(ln)
+        cs_recalc_line(data, lcp, exr)
+        db.execute("""UPDATE cost_sheet_lines SET
+            total_list=?, total_transfer=?, total_cif=?, gbm_cost=?,
+            gp_pct=?, requested_sell=?, total_sell_usd=?, total_local_currency=?
+            WHERE id=?""",
+            (data['total_list'], data['total_transfer'], data['total_cif'], data['gbm_cost'],
+             data['gp_pct'], data['requested_sell'], data['total_sell_usd'],
+             data['total_local_currency'], ln['id']))
+
+    # Sum totals
+    gt = {'total_sell_usd': 0, 'gbm_cost': 0}
+    lines = db.execute("SELECT * FROM cost_sheet_lines WHERE pcs_id = ?", (pcs_id,)).fetchall()
+    for ln in lines:
+        gt['total_sell_usd'] += ln['total_sell_usd'] or 0
+        gt['gbm_cost'] += ln['gbm_cost'] or 0
+    gp_pct = ((gt['total_sell_usd'] - gt['gbm_cost']) / gt['total_sell_usd'] * 100 if gt['total_sell_usd'] else 0)
+
+    pcs = db.execute("SELECT * FROM pcs WHERE id = ?", (pcs_id,)).fetchone()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    req_level = 0
+    qa_type = ''
+    if pcs:
+        req_level, _, _ = determine_pcs_approval(pcs['lob'], pcs['section'], pcs['sub_section'], gt['total_sell_usd'], gp_pct)
+        qa_type = get_quality_review_type(gt['total_sell_usd'])
+
+    db.execute("""UPDATE pcs SET bid_size=?, total_cost=?, selling_price=?,
+        profit_margin=?, required_approval_level=?, quality_review_type=?, updated_at=? WHERE id=?""",
+        (gt['total_sell_usd'], gt['gbm_cost'], gt['total_sell_usd'],
+         round(gp_pct, 2), req_level, qa_type, now, pcs_id))
+
+    user = current_user()
+    db.execute("""INSERT INTO pcs_history (pcs_id, action, action_by, level, comment, timestamp)
+        VALUES (?, 'Cost Sheet Synced', ?, 0, ?, ?)""",
+        (pcs_id, user['full_name'] if user else 'System',
+         f"Revenue=${gt['total_sell_usd']:,.2f}, Cost=${gt['gbm_cost']:,.2f}, GP={gp_pct:.2f}%", now))
+    db.commit()
+    flash(f"Totals synced: Revenue ${gt['total_sell_usd']:,.2f}, Cost ${gt['gbm_cost']:,.2f}, GP {gp_pct:.2f}%", 'success')
+    return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#totals')
+
+
+@app.route('/pcs/<int:pcs_id>/upload', methods=['POST'])
+@login_required
+def pcs_upload_doc(pcs_id):
+    """Upload a document attachment."""
+    if 'file' not in request.files:
+        flash('No file selected.', 'warning')
+        return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#documents')
+
+    file = request.files['file']
+    if file.filename == '':
+        flash('No file selected.', 'warning')
+        return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#documents')
+
+    doc_type = request.form.get('doc_type', 'Other')
+
+    # Save file
+    from werkzeug.utils import secure_filename
+    filename = secure_filename(file.filename)
+    # Add timestamp to prevent overwrites
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    save_name = f"{pcs_id}_{ts}_{filename}"
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], save_name)
+    file.save(file_path)
+
+    db = get_db()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user = current_user()
+
+    db.execute("""INSERT INTO pcs_documents (pcs_id, doc_type, file_name, file_path, uploaded_by, uploaded_at)
+        VALUES (?, ?, ?, ?, ?, ?)""",
+        (pcs_id, doc_type, filename, save_name, user['full_name'] if user else 'System', now))
+    db.commit()
+
+    flash(f'Document "{filename}" uploaded as {doc_type}.', 'success')
+    return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#documents')
+
+
+@app.route('/pcs/<int:pcs_id>/doc/<int:doc_id>/delete', methods=['POST'])
+@login_required
+def pcs_doc_delete(pcs_id, doc_id):
+    db = get_db()
+    doc = db.execute("SELECT * FROM pcs_documents WHERE id = ? AND pcs_id = ?", (doc_id, pcs_id)).fetchone()
+    if doc:
+        # Try to delete file
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], doc['file_path'])
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        db.execute("DELETE FROM pcs_documents WHERE id = ?", (doc_id,))
+        db.commit()
+        flash('Document removed.', 'info')
+    return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#documents')
+
+
+@app.route('/uploads/<filename>')
+@login_required
+def download_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
 # ─── PCM Routes ──────────────────────────────────────────────────────────────
@@ -843,7 +1135,7 @@ def pcm_new():
         db.commit()
 
         flash(f'PCM {contract_number} created. Required approver: {req_approver}', 'success')
-        return redirect(url_for('pcm_list'))
+        return redirect(url_for('pcm_edit', pcm_id=pcm_id))
 
     return render_template('pcm_form.html', pcm_categories=PCM_CATEGORIES)
 
@@ -861,6 +1153,80 @@ def pcm_detail(pcm_id):
     user = current_user()
     return render_template('pcm_detail.html', pcm=pcm, history=history,
                          user=user, status_colors=STATUS_COLORS)
+
+
+@app.route('/pcm/<int:pcm_id>/edit')
+@login_required
+def pcm_edit(pcm_id):
+    db = get_db()
+    pcm = db.execute("SELECT * FROM pcm WHERE id = ?", (pcm_id,)).fetchone()
+    if not pcm:
+        flash('PCM not found.', 'danger')
+        return redirect(url_for('pcm_list'))
+    history = db.execute("SELECT * FROM pcm_history WHERE pcm_id = ? ORDER BY timestamp DESC",
+                         (pcm_id,)).fetchall()
+    _, chain, detail = determine_pcm_delegation(pcm['sub_lob'], pcm['discount_pct'])
+    return render_template('pcm_edit.html', pcm=pcm, history=history,
+                         user=current_user(), status_colors=STATUS_COLORS,
+                         pcm_categories=PCM_CATEGORIES,
+                         delegation_chain=chain, delegation_detail=detail)
+
+
+@app.route('/pcm/<int:pcm_id>/update', methods=['POST'])
+@login_required
+def pcm_edit_update(pcm_id):
+    db = get_db()
+    pcm = db.execute("SELECT * FROM pcm WHERE id = ?", (pcm_id,)).fetchone()
+    if not pcm:
+        flash('PCM not found.', 'danger')
+        return redirect(url_for('pcm_list'))
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user = current_user()
+
+    contract_number = request.form.get('contract_number', '').strip()
+    customer_name = request.form.get('customer_name', '').strip()
+    if not contract_number or not customer_name:
+        flash('Contract number and customer name are required.', 'danger')
+        return redirect(url_for('pcm_edit', pcm_id=pcm_id))
+
+    list_price = float(request.form.get('list_price', 0) or 0)
+    selling_price = float(request.form.get('selling_price', 0) or 0)
+    discount_pct = ((list_price - selling_price) / list_price * 100) if list_price else 0
+
+    sub_lob = request.form.get('sub_lob', '')
+    req_approver, _, _ = determine_pcm_delegation(sub_lob, discount_pct)
+
+    db.execute("""UPDATE pcm SET contract_number=?, customer_name=?, pcm_category=?, sub_lob=?,
+        contract_type=?, list_price=?, selling_price=?, discount_pct=?,
+        required_approver=?, comments=?, updated_at=? WHERE id=?""",
+        (contract_number, customer_name,
+         request.form.get('pcm_category', 'TSS'), sub_lob,
+         request.form.get('contract_type', 'Renewal'),
+         list_price, selling_price, round(discount_pct, 2),
+         req_approver, request.form.get('comments', ''), now, pcm_id))
+    db.execute("""INSERT INTO pcm_history (pcm_id, action, action_by, comment, timestamp)
+        VALUES (?, 'PCM Updated', ?, ?, ?)""",
+        (pcm_id, user['full_name'] if user else 'System', '', now))
+    db.commit()
+
+    flash('PCM updated successfully.', 'success')
+    return redirect(url_for('pcm_edit', pcm_id=pcm_id))
+
+
+@app.route('/pcm/<int:pcm_id>/delete', methods=['POST'])
+@login_required
+def pcm_delete(pcm_id):
+    db = get_db()
+    pcm = db.execute("SELECT * FROM pcm WHERE id = ?", (pcm_id,)).fetchone()
+    if not pcm or pcm['status'] not in ('Draft', 'Rejected'):
+        flash('Only Draft or Rejected PCM can be deleted.', 'warning')
+        return redirect(url_for('pcm_list'))
+    db.execute("DELETE FROM pcm_history WHERE pcm_id = ?", (pcm_id,))
+    db.execute("DELETE FROM pcm WHERE id = ?", (pcm_id,))
+    db.commit()
+    flash('PCM deleted.', 'success')
+    return redirect(url_for('pcm_list'))
 
 
 @app.route('/pcm/<int:pcm_id>/submit', methods=['POST'])

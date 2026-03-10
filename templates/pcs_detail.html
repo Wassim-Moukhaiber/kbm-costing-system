@@ -10,10 +10,15 @@
             PCS #{{ pcs.id }} — {{ pcs.project_number }}
         </h2>
     </div>
-    <span class="badge badge-status fs-6 px-3 py-2"
-          style="background: {{ status_colors.get(pcs.status, '#6c757d') }}; color: white;">
-        {{ pcs.status }}
-    </span>
+    <div class="d-flex align-items-center gap-2">
+        <a href="{{ url_for('pcs_edit', pcs_id=pcs.id) }}" class="btn btn-primary btn-sm">
+            <i class="bi bi-pencil-square me-1"></i>Edit PCS
+        </a>
+        <span class="badge badge-status fs-6 px-3 py-2"
+              style="background: {{ status_colors.get(pcs.status, '#6c757d') }}; color: white;">
+            {{ pcs.status }}
+        </span>
+    </div>
 </div>
 
 <div class="row g-4">

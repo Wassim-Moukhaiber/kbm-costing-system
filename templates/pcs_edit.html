@@ -1,0 +1,958 @@
+{% extends "base.html" %}
+{% block title %}Edit PCS #{{ pcs.id }} - {{ pcs.project_number }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .nav-pills .nav-link {
+        color: #1a237e;
+        font-weight: 600;
+        border-radius: 8px;
+        padding: 10px 18px;
+    }
+    .nav-pills .nav-link.active {
+        background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+        color: #fff;
+    }
+    .nav-pills .nav-link:not(.active):hover {
+        background: #e8eaf6;
+    }
+    .tab-pane .card {
+        border: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        border-radius: 12px;
+    }
+    .totals-card .label { font-size: 0.8rem; color: #6c757d; text-transform: uppercase; }
+    .totals-card .value { font-size: 1.3rem; font-weight: 700; }
+    .gp-good { color: #28a745; }
+    .gp-bad { color: #dc3545; }
+    .line-table th { font-size: 0.75rem; text-transform: uppercase; white-space: nowrap; }
+    .line-table td { font-size: 0.82rem; vertical-align: middle; }
+    .approval-step { padding: 10px 16px; border-left: 4px solid #dee2e6; margin-left: 16px; margin-bottom: 8px; border-radius: 4px; }
+    .approval-step.required { border-left-color: #fd7e14; background: #fff8f0; }
+    .approval-step.not-required { border-left-color: #dee2e6; background: #f8f9fa; opacity: 0.6; }
+    .approval-step.current { border-left-color: #1a237e; background: #e8eaf6; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <div class="d-flex gap-2 mb-1">
+            <a href="{{ url_for('pcs_list') }}" class="text-decoration-none text-muted small">
+                <i class="bi bi-arrow-left me-1"></i>PCS List
+            </a>
+            <span class="text-muted small">|</span>
+            <a href="{{ url_for('pcs_detail', pcs_id=pcs.id) }}" class="text-decoration-none text-muted small">
+                <i class="bi bi-eye me-1"></i>View Detail
+            </a>
+        </div>
+        <h2 class="fw-bold mb-0" style="color: #1a237e;">
+            <i class="bi bi-pencil-square me-2"></i>PCS #{{ pcs.id }} — {{ pcs.project_number }}
+            <small class="fs-6 text-muted ms-2">{{ pcs.customer_name }}</small>
+        </h2>
+    </div>
+    <span class="badge badge-status fs-6 px-3 py-2"
+          style="background: {{ status_colors.get(pcs.status, '#6c757d') }}; color: white;">
+        {{ pcs.status }}
+    </span>
+</div>
+
+<!-- Tab Navigation -->
+<ul class="nav nav-pills mb-4" id="pcsEditorTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="info-tab" data-bs-toggle="pill" data-bs-target="#info" type="button" role="tab">
+            <i class="bi bi-info-circle me-1"></i>Project Info
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="config-tab" data-bs-toggle="pill" data-bs-target="#config" type="button" role="tab">
+            <i class="bi bi-gear me-1"></i>Cost Sheet Config
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="lines-tab" data-bs-toggle="pill" data-bs-target="#lines" type="button" role="tab">
+            <i class="bi bi-table me-1"></i>Line Items
+            {% if lines %}<span class="badge bg-secondary ms-1">{{ lines|length }}</span>{% endif %}
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="totals-tab" data-bs-toggle="pill" data-bs-target="#totals" type="button" role="tab">
+            <i class="bi bi-calculator me-1"></i>Totals & Approval
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="summary-tab" data-bs-toggle="pill" data-bs-target="#summary" type="button" role="tab">
+            <i class="bi bi-clipboard-data me-1"></i>Summary
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="documents-tab" data-bs-toggle="pill" data-bs-target="#documents" type="button" role="tab">
+            <i class="bi bi-paperclip me-1"></i>Documents
+            {% if docs %}<span class="badge bg-secondary ms-1">{{ docs|length }}</span>{% endif %}
+        </button>
+    </li>
+</ul>
+
+<!-- Tab Content -->
+<div class="tab-content" id="pcsEditorContent">
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 1: PROJECT INFO -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade show active" id="info" role="tabpanel">
+        <form method="POST" action="{{ url_for('pcs_update', pcs_id=pcs.id) }}">
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header bg-white">
+                            <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Project Details</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Project Number <span class="text-danger">*</span></label>
+                                    <input type="text" name="project_number" class="form-control" value="{{ pcs.project_number }}" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Salesforce #</label>
+                                    <input type="text" name="salesforce_number" class="form-control" value="{{ pcs.salesforce_number or '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Customer Name <span class="text-danger">*</span></label>
+                                    <input type="text" name="customer_name" class="form-control" value="{{ pcs.customer_name }}" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">PCS Type</label>
+                                    <select name="pcs_type" class="form-select">
+                                        {% for t in pcs_types %}
+                                        <option {% if pcs.pcs_type == t %}selected{% endif %}>{{ t }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">LOB <span class="text-danger">*</span></label>
+                                    <select name="lob" id="lobSelect" class="form-select" required onchange="updateSections()">
+                                        <option value="">Select LOB...</option>
+                                        {% for lob in lob_options %}
+                                        <option {% if pcs.lob == lob %}selected{% endif %}>{{ lob }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">Section</label>
+                                    <select name="section" id="sectionSelect" class="form-select" onchange="updateSubSections()">
+                                        <option value="">Select section...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">Sub-Section</label>
+                                    <select name="sub_section" id="subSectionSelect" class="form-select">
+                                        <option value="">Select sub-section...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Sub-LOB</label>
+                                    <input type="text" name="sub_lob" class="form-control" value="{{ pcs.sub_lob or '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Opportunity Status</label>
+                                    <select name="opportunity_status" class="form-select">
+                                        {% for s in opp_statuses %}
+                                        <option {% if pcs.opportunity_status == s %}selected{% endif %}>{{ s }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Reference PCS</label>
+                                    <input type="text" name="reference_pcs" class="form-control" value="{{ pcs.reference_pcs or '' }}" placeholder="For Change/Correction">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-bold">Comments</label>
+                                    <textarea name="comments" class="form-control" rows="3">{{ pcs.comments or '' }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">
+                                <i class="bi bi-check-lg me-2"></i>Save Project Info
+                            </button>
+                            <a href="{{ url_for('pcs_detail', pcs_id=pcs.id) }}" class="btn btn-outline-secondary w-100">
+                                <i class="bi bi-eye me-1"></i>View Detail Page
+                            </a>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-body small">
+                            <div class="row g-2">
+                                <div class="col-6"><span class="text-muted">Status:</span> <strong>{{ pcs.status }}</strong></div>
+                                <div class="col-6"><span class="text-muted">Created by:</span> {{ pcs.created_by }}</div>
+                                <div class="col-6"><span class="text-muted">Created:</span> {{ pcs.created_at[:16] if pcs.created_at else '' }}</div>
+                                <div class="col-6"><span class="text-muted">Updated:</span> {{ pcs.updated_at[:16] if pcs.updated_at else '' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 2: COST SHEET CONFIG -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="config" role="tabpanel">
+        <form method="POST" action="{{ url_for('pcs_config_update', pcs_id=pcs.id) }}">
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header bg-white">
+                            <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Cost Sheet Configuration</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Country Preset</label>
+                                    <select id="countryPreset" class="form-select" onchange="applyCountryPreset()">
+                                        <option value="">-- Select to auto-fill --</option>
+                                        {% for c in country_data %}
+                                        <option value="{{ c }}" {% if config.country == c %}selected{% endif %}>{{ c }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Country</label>
+                                    <input type="text" name="country" id="cfgCountry" class="form-control" value="{{ config.country or 'Kuwait' }}">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">Currency</label>
+                                    <input type="text" name="currency" id="cfgCurrency" class="form-control" value="{{ config.currency or 'KWD' }}">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">Exchange Rate (to USD)</label>
+                                    <input type="number" name="exchange_rate" id="cfgExRate" class="form-control" step="0.0001" value="{{ config.exchange_rate }}">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">Deal ID</label>
+                                    <input type="text" name="deal_id" class="form-control" value="{{ config.deal_id or '' }}" placeholder="Cisco Deal ID">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold">Local Charges %</label>
+                                    <input type="number" name="local_charges_pct" id="cfgLocalCharges" class="form-control" step="0.01" value="{{ config.local_charges_pct }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold">Customs Duty %</label>
+                                    <input type="number" name="customs_duty_pct" id="cfgCustomsDuty" class="form-control" step="0.01" value="{{ config.customs_duty_pct }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold">NL Consolidated %</label>
+                                    <input type="number" name="nl_consolidated_pct" class="form-control" step="0.01" value="{{ config.nl_consolidated_pct }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold">Default Cisco Disc %</label>
+                                    <input type="number" name="default_cisco_discount_pct" class="form-control" step="0.01" value="{{ config.default_cisco_discount_pct }}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card">
+                        <div class="card-body">
+                            <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">
+                                <i class="bi bi-check-lg me-2"></i>Save Configuration
+                            </button>
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Configuration changes affect how line item calculations are performed.
+                                After changing config, use "Recalc & Sync Totals" on the Line Items tab
+                                to recalculate all lines.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 3: LINE ITEMS -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="lines" role="tabpanel">
+        <!-- Line Items Table -->
+        <div class="card mb-3">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-table me-2"></i>Cost Sheet Lines ({{ lines|length }})</h5>
+                <form method="POST" action="{{ url_for('pcs_sync_totals', pcs_id=pcs.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-warning btn-sm">
+                        <i class="bi bi-arrow-repeat me-1"></i>Recalc & Sync Totals
+                    </button>
+                </form>
+            </div>
+            <div class="card-body p-0">
+                {% if lines %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 line-table">
+                        <thead>
+                            <tr>
+                                <th>Ln#</th>
+                                <th>Section</th>
+                                <th>Subsection</th>
+                                <th>Part #</th>
+                                <th>Description</th>
+                                <th class="text-end">Qty</th>
+                                <th class="text-end">Unit List</th>
+                                <th class="text-end">Disc%</th>
+                                <th class="text-end">Total List</th>
+                                <th class="text-end">Transfer</th>
+                                <th class="text-end">CIF</th>
+                                <th class="text-end">Cost</th>
+                                <th class="text-end">GP%</th>
+                                <th class="text-end">Sell USD</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ln in lines %}
+                            <tr>
+                                <td>{{ ln.line_number }}</td>
+                                <td title="{{ ln.section }}">{{ ln.section[:12] }}</td>
+                                <td title="{{ ln.subsection }}">{{ ln.subsection[:15] }}</td>
+                                <td>{{ ln.part_number[:15] }}</td>
+                                <td title="{{ ln.description }}">{{ ln.description[:25] }}</td>
+                                <td class="text-end">{{ ln.qty|int }}</td>
+                                <td class="text-end">${{ "{:,.2f}".format(ln.unit_list_price) }}</td>
+                                <td class="text-end">{{ "%.1f"|format(ln.discount_pct) }}%</td>
+                                <td class="text-end">${{ "{:,.0f}".format(ln.total_list) }}</td>
+                                <td class="text-end">${{ "{:,.0f}".format(ln.total_transfer) }}</td>
+                                <td class="text-end">${{ "{:,.0f}".format(ln.total_cif) }}</td>
+                                <td class="text-end">${{ "{:,.0f}".format(ln.gbm_cost) }}</td>
+                                <td class="text-end {{ 'gp-good' if ln.gp_pct >= 5 else 'gp-bad' }}">
+                                    {{ "%.1f"|format(ln.gp_pct) }}%
+                                </td>
+                                <td class="text-end">${{ "{:,.0f}".format(ln.total_sell_usd) }}</td>
+                                <td>
+                                    <form method="POST" action="{{ url_for('pcs_line_delete', pcs_id=pcs.id, line_id=ln.id) }}"
+                                          onsubmit="return confirm('Delete line #{{ ln.line_number }}?')" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1" title="Delete line">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="8" class="text-end">TOTALS:</td>
+                                <td class="text-end">${{ "{:,.0f}".format(gt.total_list) }}</td>
+                                <td class="text-end">${{ "{:,.0f}".format(gt.total_transfer) }}</td>
+                                <td class="text-end">${{ "{:,.0f}".format(gt.total_cif) }}</td>
+                                <td class="text-end">${{ "{:,.0f}".format(gt.gbm_cost) }}</td>
+                                <td class="text-end {{ 'gp-good' if gt.gp_pct >= 5 else 'gp-bad' }}">{{ "%.1f"|format(gt.gp_pct) }}%</td>
+                                <td class="text-end">${{ "{:,.0f}".format(gt.total_sell_usd) }}</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted">
+                    <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                    No line items yet. Add your first line below.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Add Line Item Form -->
+        <div class="card">
+            <div class="card-header bg-white" role="button" data-bs-toggle="collapse" data-bs-target="#addLineForm" aria-expanded="true">
+                <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Add Line Item</h5>
+            </div>
+            <div class="collapse show" id="addLineForm">
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('pcs_line_add', pcs_id=pcs.id) }}">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Section Code</label>
+                                <select id="lineCodeSelect" class="form-select" onchange="applyLineCode()">
+                                    <option value="">-- Select preset --</option>
+                                    {% for code, info in cs_sections.items() %}
+                                    <option value="{{ code }}" data-section="{{ info.section }}" data-subsection="{{ info.subsection }}">
+                                        {{ code }} - {{ info.section }} / {{ info.subsection }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Section</label>
+                                <input type="text" name="section" id="lineSection" class="form-control" placeholder="e.g. Networking">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Subsection</label>
+                                <input type="text" name="subsection" id="lineSubsection" class="form-control" placeholder="e.g. NW - Products Cisco">
+                            </div>
+                            <input type="hidden" name="subsection_code" id="lineSubsectionCode">
+
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">Supplier</label>
+                                <input type="text" name="supplier" class="form-control" placeholder="e.g. Cisco">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">Supplier Number</label>
+                                <input type="text" name="supplier_number" class="form-control">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">Part Number</label>
+                                <input type="text" name="part_number" class="form-control" placeholder="e.g. C9300-48U-A">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">UOM</label>
+                                <select name="uom" class="form-select">
+                                    <option>EA</option>
+                                    <option>LOT</option>
+                                    <option>SET</option>
+                                    <option>HR</option>
+                                    <option>DAY</option>
+                                    <option>MON</option>
+                                    <option>YR</option>
+                                </select>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-bold">Description</label>
+                                <input type="text" name="description" class="form-control" placeholder="Item description">
+                            </div>
+
+                            <div class="col-md-2">
+                                <label class="form-label fw-bold">Qty</label>
+                                <input type="number" name="qty" class="form-control" step="1" value="1" min="0">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label fw-bold">Unit List Price ($)</label>
+                                <input type="number" name="unit_list_price" class="form-control" step="0.01" value="0">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label fw-bold">Discount %</label>
+                                <input type="number" name="discount_pct" class="form-control" step="0.01" value="0">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label fw-bold">GBM Cost ($)</label>
+                                <input type="number" name="gbm_cost" class="form-control" step="0.01" value="0">
+                                <small class="text-muted">0 = auto from CIF</small>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label fw-bold">Target GP %</label>
+                                <input type="number" name="gp_pct" class="form-control" step="0.01" value="0">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label fw-bold">Requested Sell ($)</label>
+                                <input type="number" name="requested_sell" class="form-control" step="0.01" value="0">
+                                <small class="text-muted">0 = auto from GP%</small>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-bold">Notes</label>
+                                <input type="text" name="notes" class="form-control" placeholder="Optional notes">
+                            </div>
+
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-success">
+                                    <i class="bi bi-plus-lg me-1"></i>Add Line Item
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 4: TOTALS & APPROVAL -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="totals" role="tabpanel">
+        <div class="row g-4">
+            <div class="col-lg-7">
+                <!-- Grand Totals -->
+                <div class="card mb-3 totals-card">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-calculator me-2"></i>Grand Totals</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3 text-center">
+                            <div class="col-md-4">
+                                <div class="label">Total List Price</div>
+                                <div class="value">${{ "{:,.2f}".format(gt.total_list) }}</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="label">Total Transfer</div>
+                                <div class="value">${{ "{:,.2f}".format(gt.total_transfer) }}</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="label">Total CIF</div>
+                                <div class="value">${{ "{:,.2f}".format(gt.total_cif) }}</div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="label">Total Cost (GBM)</div>
+                                <div class="value">${{ "{:,.2f}".format(gt.gbm_cost) }}</div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="label">Revenue (Sell USD)</div>
+                                <div class="value text-primary">${{ "{:,.2f}".format(gt.total_sell_usd) }}</div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="label">Gross Profit</div>
+                                <div class="value {{ 'gp-good' if gt.gross_profit >= 0 else 'gp-bad' }}">
+                                    ${{ "{:,.2f}".format(gt.gross_profit) }}
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="label">GP %</div>
+                                <div class="value {{ 'gp-good' if gt.gp_pct >= 5 else 'gp-bad' }}">
+                                    {{ "%.2f"|format(gt.gp_pct) }}%
+                                </div>
+                            </div>
+                        </div>
+                        {% if config and config.exchange_rate %}
+                        <hr>
+                        <div class="row g-3 text-center">
+                            <div class="col-md-4">
+                                <div class="label">Total Local Currency ({{ config.currency }})</div>
+                                <div class="value">{{ "{:,.2f}".format(gt.total_local_currency) }}</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="label">Exchange Rate</div>
+                                <div class="value">{{ config.exchange_rate }}</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="label">Country</div>
+                                <div class="value">{{ config.country }}</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Sync Button -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <form method="POST" action="{{ url_for('pcs_sync_totals', pcs_id=pcs.id) }}">
+                            <button type="submit" class="btn btn-warning btn-lg w-100">
+                                <i class="bi bi-arrow-repeat me-2"></i>Sync Totals to PCS Record
+                            </button>
+                        </form>
+                        <p class="text-muted small mt-2 mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            This recalculates all line items using current config, sums totals,
+                            updates the PCS record (bid size, cost, selling price, margin),
+                            and determines the required approval level.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- PCS Record Values -->
+                <div class="card">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-database me-2"></i>PCS Record Values (Synced)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <span class="text-muted small">Bid Size</span>
+                                <div class="fw-bold">${{ "{:,.2f}".format(pcs.bid_size) }}</div>
+                            </div>
+                            <div class="col-md-3">
+                                <span class="text-muted small">Total Cost</span>
+                                <div class="fw-bold">${{ "{:,.2f}".format(pcs.total_cost) }}</div>
+                            </div>
+                            <div class="col-md-3">
+                                <span class="text-muted small">Selling Price</span>
+                                <div class="fw-bold">${{ "{:,.2f}".format(pcs.selling_price) }}</div>
+                            </div>
+                            <div class="col-md-3">
+                                <span class="text-muted small">Profit Margin</span>
+                                <div class="fw-bold {{ 'gp-good' if pcs.profit_margin >= 5 else 'gp-bad' }}">
+                                    {{ "%.2f"|format(pcs.profit_margin) }}%
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <!-- Approval Preview -->
+                <div class="card mb-3">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>Approval Chain Preview</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <span class="text-muted small">Required Approval Level:</span>
+                            <span class="badge bg-primary fs-6 ms-1">Level {{ req_level }}</span>
+                        </div>
+                        <div class="mb-3">
+                            <span class="text-muted small">Quality Review:</span>
+                            <span class="badge bg-info text-dark ms-1">{{ pcs.quality_review_type or 'N/A' }}</span>
+                        </div>
+                        <div class="mb-3 small text-muted">{{ detail }}</div>
+
+                        <div class="approval-chain">
+                            {% for lvl in levels %}
+                            <div class="approval-step {{ 'required' if lvl.level <= req_level else 'not-required' }}
+                                        {{ 'current' if lvl.level == pcs.current_approver_level and pcs.status in ('Submitted', 'Under Review') else '' }}">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>L{{ lvl.level }}:</strong> {{ lvl.role }}
+                                    </div>
+                                    {% if lvl.level <= req_level %}
+                                    <span class="badge bg-warning text-dark">Required</span>
+                                    {% else %}
+                                    <span class="badge bg-light text-muted">N/A</span>
+                                    {% endif %}
+                                </div>
+                                <small class="text-muted">Min bid: ${{ "{:,.0f}".format(lvl.min_bid) }}</small>
+                            </div>
+                            {% endfor %}
+                            {% if not levels %}
+                            <p class="text-muted">No approval chain configured for this LOB.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 5: SUMMARY -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="summary" role="tabpanel">
+        <div class="row g-4">
+            <div class="col-lg-6">
+                <!-- Project Summary -->
+                <div class="card mb-3">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-card-heading me-2"></i>Project Summary</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr><td class="text-muted" style="width:40%">PCS ID</td><td class="fw-bold">#{{ pcs.id }}</td></tr>
+                            <tr><td class="text-muted">Project Number</td><td class="fw-bold">{{ pcs.project_number }}</td></tr>
+                            <tr><td class="text-muted">Salesforce #</td><td>{{ pcs.salesforce_number or '---' }}</td></tr>
+                            <tr><td class="text-muted">Customer</td><td class="fw-bold">{{ pcs.customer_name }}</td></tr>
+                            <tr><td class="text-muted">LOB</td><td>{{ pcs.lob }}</td></tr>
+                            <tr><td class="text-muted">Sub-LOB</td><td>{{ pcs.sub_lob or '---' }}</td></tr>
+                            <tr><td class="text-muted">Section</td><td>{{ pcs.section or '---' }}</td></tr>
+                            <tr><td class="text-muted">Sub-Section</td><td>{{ pcs.sub_section or '---' }}</td></tr>
+                            <tr><td class="text-muted">PCS Type</td><td>{{ pcs.pcs_type }}</td></tr>
+                            <tr><td class="text-muted">Reference PCS</td><td>{{ pcs.reference_pcs or '---' }}</td></tr>
+                            <tr><td class="text-muted">Opportunity Status</td><td>{{ pcs.opportunity_status }}</td></tr>
+                            <tr><td class="text-muted">Status</td><td>
+                                <span class="badge" style="background: {{ status_colors.get(pcs.status, '#6c757d') }}; color: white;">{{ pcs.status }}</span>
+                            </td></tr>
+                            <tr><td class="text-muted">Created By</td><td>{{ pcs.created_by }}</td></tr>
+                            <tr><td class="text-muted">Created At</td><td>{{ pcs.created_at or '---' }}</td></tr>
+                            <tr><td class="text-muted">Updated At</td><td>{{ pcs.updated_at or '---' }}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Config Summary -->
+                <div class="card mb-3">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Cost Sheet Config</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr><td class="text-muted" style="width:40%">Country</td><td>{{ config.country }}</td></tr>
+                            <tr><td class="text-muted">Currency</td><td>{{ config.currency }}</td></tr>
+                            <tr><td class="text-muted">Exchange Rate</td><td>{{ config.exchange_rate }}</td></tr>
+                            <tr><td class="text-muted">Local Charges %</td><td>{{ config.local_charges_pct }}%</td></tr>
+                            <tr><td class="text-muted">Customs Duty %</td><td>{{ config.customs_duty_pct }}%</td></tr>
+                            <tr><td class="text-muted">NL Consolidated %</td><td>{{ config.nl_consolidated_pct }}%</td></tr>
+                            <tr><td class="text-muted">Default Cisco Disc %</td><td>{{ config.default_cisco_discount_pct }}%</td></tr>
+                            <tr><td class="text-muted">Deal ID</td><td>{{ config.deal_id or '---' }}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <!-- Financial Summary -->
+                <div class="card mb-3">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-currency-dollar me-2"></i>Financial Summary</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr><td class="text-muted" style="width:45%">Line Items</td><td class="fw-bold">{{ lines|length }}</td></tr>
+                            <tr><td class="text-muted">Total List Price</td><td class="fw-bold">${{ "{:,.2f}".format(gt.total_list) }}</td></tr>
+                            <tr><td class="text-muted">Total Transfer</td><td>${{ "{:,.2f}".format(gt.total_transfer) }}</td></tr>
+                            <tr><td class="text-muted">Total CIF</td><td>${{ "{:,.2f}".format(gt.total_cif) }}</td></tr>
+                            <tr><td class="text-muted">GBM Cost</td><td class="fw-bold">${{ "{:,.2f}".format(gt.gbm_cost) }}</td></tr>
+                            <tr><td class="text-muted">Revenue (Sell USD)</td><td class="fw-bold text-primary">${{ "{:,.2f}".format(gt.total_sell_usd) }}</td></tr>
+                            <tr><td class="text-muted">Gross Profit</td><td class="fw-bold {{ 'gp-good' if gt.gross_profit >= 0 else 'gp-bad' }}">${{ "{:,.2f}".format(gt.gross_profit) }}</td></tr>
+                            <tr><td class="text-muted">GP %</td><td class="fw-bold {{ 'gp-good' if gt.gp_pct >= 5 else 'gp-bad' }}">{{ "%.2f"|format(gt.gp_pct) }}%</td></tr>
+                            <tr><td class="text-muted">Local Currency ({{ config.currency }})</td><td>{{ "{:,.2f}".format(gt.total_local_currency) }}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Approval Summary -->
+                <div class="card mb-3">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Approval Summary</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr><td class="text-muted" style="width:45%">Required Level</td><td class="fw-bold">Level {{ req_level }}</td></tr>
+                            <tr><td class="text-muted">Current Level</td><td>Level {{ pcs.current_approver_level }}</td></tr>
+                            <tr><td class="text-muted">QA Review Type</td><td>{{ pcs.quality_review_type or 'N/A' }}</td></tr>
+                            <tr><td class="text-muted">QA Status</td><td>{{ pcs.quality_review_status }}</td></tr>
+                        </table>
+                        <hr>
+                        <small class="text-muted">{{ detail }}</small>
+                    </div>
+                </div>
+
+                <!-- History -->
+                <div class="card">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>History ({{ history|length }})</h5>
+                    </div>
+                    <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                        {% for h in history %}
+                        <div class="d-flex mb-2 pb-2 border-bottom">
+                            <div class="me-2">
+                                {% if 'Approved' in h.action %}
+                                <i class="bi bi-check-circle-fill text-success"></i>
+                                {% elif 'Rejected' in h.action %}
+                                <i class="bi bi-x-circle-fill text-danger"></i>
+                                {% elif 'Submitted' in h.action %}
+                                <i class="bi bi-send-fill text-primary"></i>
+                                {% elif 'Synced' in h.action %}
+                                <i class="bi bi-arrow-repeat text-warning"></i>
+                                {% else %}
+                                <i class="bi bi-circle-fill text-muted"></i>
+                                {% endif %}
+                            </div>
+                            <div class="flex-grow-1 small">
+                                <div class="fw-bold">{{ h.action }}</div>
+                                <div class="text-muted">
+                                    {{ h.action_by }} | {{ h.timestamp }}
+                                    {% if h.comment %}<br>{{ h.comment }}{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% if not history %}
+                        <p class="text-muted mb-0">No history yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB 6: DOCUMENTS -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-pane fade" id="documents" role="tabpanel">
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <!-- Document List -->
+                <div class="card mb-3">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-folder2-open me-2"></i>Uploaded Documents ({{ docs|length }})</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if docs %}
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Type</th>
+                                        <th>File Name</th>
+                                        <th>Uploaded By</th>
+                                        <th>Date</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for doc in docs %}
+                                    <tr>
+                                        <td>{{ loop.index }}</td>
+                                        <td><span class="badge bg-info text-dark">{{ doc.doc_type }}</span></td>
+                                        <td>
+                                            <a href="{{ url_for('download_file', filename=doc.file_path) }}" target="_blank" class="text-decoration-none">
+                                                <i class="bi bi-download me-1"></i>{{ doc.file_name }}
+                                            </a>
+                                        </td>
+                                        <td class="small">{{ doc.uploaded_by }}</td>
+                                        <td class="small">{{ doc.uploaded_at[:16] if doc.uploaded_at else '' }}</td>
+                                        <td>
+                                            <form method="POST" action="{{ url_for('pcs_doc_delete', pcs_id=pcs.id, doc_id=doc.id) }}"
+                                                  onsubmit="return confirm('Delete this document?')" class="d-inline">
+                                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1" title="Delete">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="p-4 text-center text-muted">
+                            <i class="bi bi-cloud-upload fs-1 d-block mb-2"></i>
+                            No documents uploaded yet.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <!-- Upload Form -->
+                <div class="card">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-cloud-arrow-up me-2"></i>Upload Document</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="{{ url_for('pcs_upload_doc', pcs_id=pcs.id) }}" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Document Type</label>
+                                <select name="doc_type" class="form-select">
+                                    {% for dt in doc_types %}
+                                    <option>{{ dt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">File</label>
+                                <input type="file" name="file" class="form-control" required>
+                                <small class="text-muted">Max 50MB. Any file type.</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="bi bi-upload me-1"></i>Upload
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ── LOB cascading dropdowns ──
+const lobData = {{ lob_options|tojson }};
+const savedLob = {{ pcs.lob|tojson }};
+const savedSection = {{ pcs.section|tojson }};
+const savedSubSection = {{ pcs.sub_section|tojson }};
+
+function updateSections() {
+    const lob = document.getElementById('lobSelect').value;
+    const secSel = document.getElementById('sectionSelect');
+    const subSel = document.getElementById('subSectionSelect');
+    secSel.innerHTML = '<option value="">Select section...</option>';
+    subSel.innerHTML = '<option value="">Select sub-section...</option>';
+    if (lob && lobData[lob]) {
+        Object.keys(lobData[lob]).forEach(sec => {
+            const opt = document.createElement('option');
+            opt.value = sec;
+            opt.textContent = sec;
+            if (sec === savedSection) opt.selected = true;
+            secSel.appendChild(opt);
+        });
+        // Trigger sub-section population
+        if (secSel.value) updateSubSections();
+    }
+}
+
+function updateSubSections() {
+    const lob = document.getElementById('lobSelect').value;
+    const sec = document.getElementById('sectionSelect').value;
+    const subSel = document.getElementById('subSectionSelect');
+    subSel.innerHTML = '<option value="">Select sub-section...</option>';
+    if (lob && sec && lobData[lob] && lobData[lob][sec]) {
+        lobData[lob][sec].forEach(sub => {
+            const opt = document.createElement('option');
+            opt.value = sub;
+            opt.textContent = sub;
+            if (sub === savedSubSection) opt.selected = true;
+            subSel.appendChild(opt);
+        });
+    }
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', function() {
+    if (savedLob) {
+        updateSections();
+    }
+});
+
+// ── Country preset auto-fill ──
+const countryData = {{ country_data|tojson }};
+
+function applyCountryPreset() {
+    const sel = document.getElementById('countryPreset');
+    const country = sel.value;
+    if (country && countryData[country]) {
+        const d = countryData[country];
+        document.getElementById('cfgCountry').value = country;
+        document.getElementById('cfgCurrency').value = d.currency;
+        document.getElementById('cfgExRate').value = d.exchange_rate;
+        document.getElementById('cfgLocalCharges').value = d.local_charges_pct;
+        document.getElementById('cfgCustomsDuty').value = d.customs_pct;
+    }
+}
+
+// ── Line item section code preset ──
+function applyLineCode() {
+    const sel = document.getElementById('lineCodeSelect');
+    const opt = sel.options[sel.selectedIndex];
+    if (opt.value) {
+        document.getElementById('lineSection').value = opt.dataset.section || '';
+        document.getElementById('lineSubsection').value = opt.dataset.subsection || '';
+        document.getElementById('lineSubsectionCode').value = opt.value;
+    }
+}
+
+// ── Handle URL hash for tab activation ──
+function activateTabFromHash() {
+    const hash = window.location.hash;
+    if (hash) {
+        const tabBtn = document.querySelector(`[data-bs-target="${hash}"]`);
+        if (tabBtn) {
+            const tab = new bootstrap.Tab(tabBtn);
+            tab.show();
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', activateTabFromHash);
+window.addEventListener('hashchange', activateTabFromHash);
+
+// Update hash when tab changes
+document.querySelectorAll('[data-bs-toggle="pill"]').forEach(function(tabBtn) {
+    tabBtn.addEventListener('shown.bs.tab', function(e) {
+        const target = e.target.getAttribute('data-bs-target');
+        if (target) {
+            history.replaceState(null, null, target);
+        }
+    });
+});
+</script>
+{% endblock %}

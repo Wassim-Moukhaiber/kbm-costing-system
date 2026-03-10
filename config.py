@@ -252,6 +252,32 @@ COST_SHEET_SECTIONS = {
     "NS_16_F": {"section": "Other Services", "subsection": "Training"},
 }
 
+PCS_TECHNOLOGY_SELECTIONS = {
+    "Networking - Cisco": {"lob": "DIS", "section": "Networking", "sub_lob": "Networking"},
+    "Network Security - Cisco": {"lob": "DIS", "section": "Network Security", "sub_lob": "Network Security"},
+    "Network Security - Fortinet/Palo Alto": {"lob": "DIS", "section": "Network Security", "sub_lob": "Network Security"},
+    "SDDC - Nutanix": {"lob": "DIS", "section": "SDDC", "sub_lob": "SDDC"},
+    "SDDC - VMware": {"lob": "DIS", "section": "SDDC", "sub_lob": "SDDC"},
+    "SDDC - Servers (HPE/Dell/Lenovo)": {"lob": "DIS", "section": "SDDC", "sub_lob": "SDDC"},
+    "Infrastructure - Storage": {"lob": "DIS", "section": "Infrastructure", "sub_lob": "Infrastructure"},
+    "Infrastructure - Compute": {"lob": "DIS", "section": "Infrastructure", "sub_lob": "Infrastructure"},
+    "Maintenance & Support": {"lob": "DIS", "section": "Maintenance", "sub_lob": "Maintenance"},
+    "IBM - Power Systems (HW)": {"lob": "DIS", "section": "Infrastructure", "sub_lob": "IBM HW"},
+    "IBM - Software (New)": {"lob": "DIS", "section": "SDDC", "sub_lob": "IBM SW"},
+    "IBM - Software (Renewal)": {"lob": "DIS", "section": "SDDC", "sub_lob": "IBM SW"},
+    "IBM - Security (QRadar/Guardium)": {"lob": "DIS", "section": "Network Security", "sub_lob": "IBM Security"},
+    "IBM - Storage (FlashSystem/Spectrum)": {"lob": "DIS", "section": "Infrastructure", "sub_lob": "IBM Storage"},
+}
+
+COUNTRY_DATA = {
+    "Kuwait": {"currency": "KWD", "exchange_rate": 0.3125, "vat_pct": 0.0, "customs_pct": 5.0, "local_charges_pct": 6.45},
+    "Saudi Arabia": {"currency": "SAR", "exchange_rate": 3.75, "vat_pct": 15.0, "customs_pct": 5.0, "local_charges_pct": 5.0},
+    "UAE": {"currency": "AED", "exchange_rate": 3.67, "vat_pct": 5.0, "customs_pct": 5.0, "local_charges_pct": 5.0},
+    "Bahrain": {"currency": "BHD", "exchange_rate": 0.376, "vat_pct": 10.0, "customs_pct": 5.0, "local_charges_pct": 5.0},
+    "Qatar": {"currency": "QAR", "exchange_rate": 3.64, "vat_pct": 0.0, "customs_pct": 5.0, "local_charges_pct": 5.0},
+    "Oman": {"currency": "OMR", "exchange_rate": 0.385, "vat_pct": 5.0, "customs_pct": 5.0, "local_charges_pct": 5.0},
+}
+
 STATUS_COLORS = {
     "Draft": "#6c757d",
     "Submitted": "#007bff",
