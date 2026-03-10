@@ -7,6 +7,8 @@ Project Costing System (PCS) & Proposal Contract Management (PCM)
 import sqlite3
 import hashlib
 import os
+import csv
+import io
 import json
 from datetime import datetime
 from functools import wraps
@@ -454,6 +456,140 @@ def cs_recalc_line(line, local_charges_pct=6.45, exchange_rate=0.3125):
     line["total_sell_usd"] = line["requested_sell"]
     line["total_local_currency"] = line["total_sell_usd"] * exchange_rate
     return line
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIG FILE PARSERS (Cisco BOM, IBM SBO, Generic CSV)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _find_col(header, names):
+    for n in names:
+        for j, h in enumerate(header):
+            if n in h:
+                return j
+    return -1
+
+
+def parse_config_file(content, import_type='auto'):
+    """Parse a CSV/TSV config file into line item dicts.
+    Returns (list_of_lines, message_string).
+    """
+    try:
+        reader = csv.reader(content.strip().splitlines())
+        rows = list(reader)
+    except Exception:
+        rows = [line.split("\t") for line in content.strip().splitlines()]
+    if not rows:
+        return [], "Empty file"
+
+    # Detect header row
+    header = None
+    data_start = 0
+    for i, row in enumerate(rows):
+        row_lower = [str(c).strip().lower() for c in row]
+        if any(h in row_lower for h in [
+            "part number", "part_number", "partnumber", "part no", "part no.",
+            "pid", "product id", "sku", "feature code", "feature",
+            "machine type", "material", "material number"
+        ]):
+            header = row_lower
+            data_start = i + 1
+            break
+    if header is None:
+        header = ["part number", "description", "qty", "list price", "discount"]
+        data_start = 0
+
+    col_part = _find_col(header, ["part number", "part_number", "partnumber", "part no", "pid", "sku", "feature code", "machine type", "material", "item"])
+    col_desc = _find_col(header, ["description", "desc", "product description", "item description", "feature description"])
+    col_qty  = _find_col(header, ["qty", "quantity", "count", "ordered qty", "required qty", "license count"])
+    col_list = _find_col(header, ["list price", "list_price", "unit price", "price", "unit list", "msrp", "global list", "extended list", "srp", "ext price"])
+    col_disc = _find_col(header, ["discount", "disc%", "discount%", "disc", "best discount", "bp discount", "special bid"])
+    col_type = _find_col(header, ["type", "category", "product type", "line type", "offering type", "mes/csu"])
+
+    msg_parts = []
+    if col_part < 0:
+        msg_parts.append("Warning: Could not detect Part Number column")
+    if col_qty < 0:
+        msg_parts.append("Warning: Could not detect Quantity column (defaulting to 1)")
+    if col_list < 0:
+        msg_parts.append("Warning: Could not detect List Price column (defaulting to 0)")
+
+    lines = []
+    line_num = 1
+    for row in rows[data_start:]:
+        if len(row) < 2 or all(not str(c).strip() for c in row):
+            continue
+        part = str(row[col_part]).strip() if 0 <= col_part < len(row) else ""
+        desc = str(row[col_desc]).strip() if 0 <= col_desc < len(row) else ""
+        if not part and not desc:
+            continue
+        try:
+            qty = float(row[col_qty]) if 0 <= col_qty < len(row) and row[col_qty].strip() else 1
+        except (ValueError, TypeError):
+            qty = 1
+        try:
+            raw = str(row[col_list]).replace(",", "").replace("$", "").strip() if 0 <= col_list < len(row) else "0"
+            unit_list = float(raw) if raw else 0
+        except (ValueError, TypeError):
+            unit_list = 0
+        try:
+            disc = float(str(row[col_disc]).replace("%", "").strip()) if 0 <= col_disc < len(row) and row[col_disc].strip() else 0
+        except (ValueError, TypeError):
+            disc = 0
+
+        ptype = str(row[col_type]).strip().lower() if 0 <= col_type < len(row) else ""
+        part_upper = part.upper()
+
+        # Auto-detect section based on import type or part number patterns
+        if import_type == 'ibm' or (import_type == 'auto' and any(
+            part_upper.startswith(p) for p in ("5737", "5725", "5724", "D1", "9080", "9040", "9009", "7042", "2145", "2077")
+        )):
+            supplier, supplier_num = "IBM", "IB001"
+            if ptype in ("sw", "software", "swma", "s&s", "subscription"):
+                if "renew" in desc.lower() or "s&s" in ptype:
+                    section_name, subsection, section_key = "SDDC", "IBM SW - Renewal (Passport Advantage)", "IBM_SW_C"
+                else:
+                    section_name, subsection, section_key = "SDDC", "IBM SW - New", "IBM_SW_A"
+            elif ptype in ("hw", "hardware", "machine", "appliance"):
+                section_name, subsection, section_key = "Infrastructure", "IBM HW - New (Power/Storage/FlashSystem)", "IBM_HW_A"
+            elif ptype in ("maint", "maintenance", "support"):
+                section_name, subsection, section_key = "Infrastructure", "IBM HW - Maintenance & Support", "IBM_HW_B"
+            elif "qradar" in desc.lower() or "guardium" in desc.lower() or "security" in ptype:
+                section_name, subsection, section_key = "Network Security", "IBM Security - Products (QRadar/Guardium)", "IBM_SEC_A"
+            elif part_upper.startswith(("5737", "5725", "5724", "D1")):
+                section_name, subsection, section_key = "SDDC", "IBM SW - New", "IBM_SW_A"
+            elif part_upper.startswith(("9080", "9040", "9009", "9008", "7042", "2145", "2077", "4664")):
+                section_name, subsection, section_key = "Infrastructure", "IBM HW - New (Power/Storage/FlashSystem)", "IBM_HW_A"
+            elif "renew" in desc.lower() or "passport" in desc.lower():
+                section_name, subsection, section_key = "SDDC", "IBM SW - Renewal (Passport Advantage)", "IBM_SW_C"
+            else:
+                section_name, subsection, section_key = "Infrastructure", "IBM HW - New (Power/Storage/FlashSystem)", "IBM_HW_A"
+        else:
+            # Cisco / generic vendor BOM
+            supplier, supplier_num = "CISCO INTERNATIONAL", "C0756"
+            if part_upper.startswith("CON-"):
+                section_name, subsection, section_key = "Maintenance", "Cisco 1st Year Maintenance", "NS_15_A"
+            elif part_upper.startswith(("FPR", "FTD", "ASA")):
+                section_name, subsection, section_key = "Network Security", "Security - Products Non-Cisco", "DI_12_D"
+            else:
+                section_name, subsection, section_key = "Networking", "NW - Products Cisco", "NS_11_C"
+
+        ln_data = {
+            "line_number": line_num,
+            "section": section_name, "subsection": subsection,
+            "subsection_code": section_key,
+            "supplier": supplier, "supplier_number": supplier_num,
+            "part_number": part, "description": desc,
+            "uom": "EA", "qty": qty, "unit_list_price": unit_list,
+            "discount_pct": disc,
+        }
+        lines.append(ln_data)
+        line_num += 1
+
+    result_msg = f"Parsed {len(lines)} line items"
+    if msg_parts:
+        result_msg += "\n" + "\n".join(msg_parts)
+    return lines, result_msg
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -967,6 +1103,86 @@ def pcs_line_delete(pcs_id, line_id):
     db.execute("DELETE FROM cost_sheet_lines WHERE id = ? AND pcs_id = ?", (line_id, pcs_id))
     db.commit()
     flash('Line item deleted.', 'info')
+    return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#lines')
+
+
+@app.route('/pcs/<int:pcs_id>/import', methods=['POST'])
+@login_required
+def pcs_import_config(pcs_id):
+    """Import line items from a CSV/TSV config file (Cisco BOM, IBM SBO, etc.)."""
+    if 'file' not in request.files:
+        flash('No file selected.', 'warning')
+        return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#lines')
+
+    file = request.files['file']
+    if file.filename == '':
+        flash('No file selected.', 'warning')
+        return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#lines')
+
+    import_type = request.form.get('import_type', 'auto')
+
+    # Read file content
+    content = None
+    raw = file.read()
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            content = raw.decode(enc)
+            break
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    if content is None:
+        flash('Unable to decode file. Try saving as UTF-8.', 'danger')
+        return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#lines')
+
+    parsed_lines, msg = parse_config_file(content, import_type)
+    if not parsed_lines:
+        flash(f'Import failed: {msg}', 'danger')
+        return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#lines')
+
+    # Get config for recalc
+    db = get_db()
+    config = db.execute("SELECT * FROM cost_sheet_config WHERE pcs_id = ?", (pcs_id,)).fetchone()
+    lcp = config['local_charges_pct'] if config else 6.45
+    exr = config['exchange_rate'] if config else 0.3125
+    default_disc = config['default_cisco_discount_pct'] if config else 64.0
+
+    max_ln = db.execute("SELECT MAX(line_number) FROM cost_sheet_lines WHERE pcs_id=?", (pcs_id,)).fetchone()[0]
+    start_num = (max_ln or 0) + 1
+
+    for i, ln in enumerate(parsed_lines):
+        ln['line_number'] = start_num + i
+        # Apply default discount if none specified and it's Cisco
+        if ln.get('discount_pct', 0) == 0 and ln.get('supplier', '').upper().startswith('CISCO'):
+            ln['discount_pct'] = default_disc
+        # Apply default GP if none set
+        if ln.get('gp_pct', 0) == 0 and ln.get('requested_sell', 0) == 0:
+            ln['gp_pct'] = 5.0
+        cs_recalc_line(ln, lcp, exr)
+
+        db.execute("""INSERT INTO cost_sheet_lines
+            (pcs_id, line_number, section, subsection, subsection_code,
+             supplier, supplier_number, part_number, description,
+             uom, qty, unit_list_price, discount_pct,
+             total_list, total_transfer, total_cif, gbm_cost,
+             gp_pct, requested_sell, local_charges_loading,
+             total_sell_usd, total_local_currency, notes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (pcs_id, ln['line_number'],
+             ln.get('section', ''), ln.get('subsection', ''),
+             ln.get('subsection_code', ''),
+             ln.get('supplier', ''), ln.get('supplier_number', ''),
+             ln.get('part_number', ''), ln.get('description', ''),
+             ln.get('uom', 'EA'), ln.get('qty', 0),
+             ln.get('unit_list_price', 0), ln.get('discount_pct', 0),
+             ln.get('total_list', 0), ln.get('total_transfer', 0),
+             ln.get('total_cif', 0), ln.get('gbm_cost', 0),
+             ln.get('gp_pct', 0), ln.get('requested_sell', 0),
+             ln.get('local_charges_loading', 0),
+             ln.get('total_sell_usd', 0), ln.get('total_local_currency', 0),
+             ''))
+    db.commit()
+
+    flash(f'Imported {len(parsed_lines)} line items from {file.filename}. {msg}', 'success')
     return redirect(url_for('pcs_edit', pcs_id=pcs_id) + '#lines')
 
 

@@ -285,11 +285,44 @@
         <div class="card mb-3">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-table me-2"></i>Cost Sheet Lines ({{ lines|length }})</h5>
-                <form method="POST" action="{{ url_for('pcs_sync_totals', pcs_id=pcs.id) }}" class="d-inline">
-                    <button type="submit" class="btn btn-warning btn-sm">
-                        <i class="bi bi-arrow-repeat me-1"></i>Recalc & Sync Totals
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#importSection">
+                        <i class="bi bi-file-earmark-arrow-up me-1"></i>Import Config File
                     </button>
-                </form>
+                    <form method="POST" action="{{ url_for('pcs_sync_totals', pcs_id=pcs.id) }}" class="d-inline">
+                        <button type="submit" class="btn btn-warning btn-sm">
+                            <i class="bi bi-arrow-repeat me-1"></i>Recalc & Sync Totals
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <!-- Import Config File Section -->
+            <div class="collapse" id="importSection">
+                <div class="card-body border-bottom" style="background: #f0f4ff;">
+                    <form method="POST" action="{{ url_for('pcs_import_config', pcs_id=pcs.id) }}" enctype="multipart/form-data">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold small">Import Type</label>
+                                <select name="import_type" class="form-select form-select-sm">
+                                    <option value="auto">Auto-Detect</option>
+                                    <option value="cisco">Cisco BOM / Config</option>
+                                    <option value="ibm">IBM SBO / eConfig</option>
+                                    <option value="generic">Generic Vendor BOM</option>
+                                </select>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label fw-bold small">CSV / TSV File</label>
+                                <input type="file" name="file" class="form-control form-control-sm" accept=".csv,.tsv,.txt" required>
+                            </div>
+                            <div class="col-md-4">
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-upload me-1"></i>Import Line Items
+                                </button>
+                                <small class="text-muted ms-2">CSV with headers: Part Number, Description, Qty, List Price, Discount</small>
+                            </div>
+                        </div>
+                    </form>
+                </div>
             </div>
             <div class="card-body p-0">
                 {% if lines %}
